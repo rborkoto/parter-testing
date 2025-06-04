@@ -145,14 +145,17 @@ sure it is properly build.
 1) Enable minikube to see local Docker images: ```eval $(minikube -p minikube docker-env)```
 2) Rebuild the docker images so now minikube sees them ```docker-compose build```
 3) To enable the NGINX Ingress controller, run the following command: ```minikube addons enable ingress```.
-4) Install metrics server for
+4) (Optional)Install metrics server for
    minikube ```kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml```
    so minikube can measure utilization of deployment (needed for HPA)
-5) Navigate to ```k8s``` folder and run ```kubectl delete -f .;kubectl apply -f .```
+5) Navigate to ```k8s-microk8s``` folder and run ```kubectl delete -f .;kubectl apply -f .```
 6) Create a tunnel to load balancer with minikube: ```minikube service lb-backend``` or ```minikube tunnel lb-backend```
 7) Follow generate tunnel URI with to see backend container
-8) As there is no proper DNS resolution supported by minikube yet, it is not possible to proceed further
-
+8) Get Minikube’s IP and Edit /etc/hosts
+   8.1) Run ```minikube ip``` to get the IP and add it to /etc/hosts or your windows hosts file in system32/etc/hosts , against the app urls
+        for example , check the hostnames in k8s-microk8s/k8app-ingress.yml and add the ip against them
+        ```192.168.49.2   k8app.com```
+9) 
 ### How to make a rollout
 
 - Make a change in your deployment file (Change the image tag or the limits)
