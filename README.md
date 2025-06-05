@@ -81,11 +81,6 @@ We defined the following roles:
 
 # Setup using AWS EKS
 
-The `k8s-aws-chart/` folder contains Helm chart artifacts to deploy on AWS EKS. You can streamline your deployment with:
-
-```bash
-helm install k8app ./k8s-aws-chart
-```
 
 Below are the steps to configure, build, and deploy your Kubernetes application on EKS.
 
