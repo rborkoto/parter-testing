@@ -76,6 +76,268 @@ We defined the following roles:
         - ```kubectl auth can-i list deploy --namespace default --as user_security```
             - Expected answer is ```no```
 
+
+# Setup using AWS EKS
+
+The `k8s-aws-chart/` folder contains Helm chart artifacts to deploy on AWS EKS. You can streamline your deployment with:
+
+```bash
+helm install k8app ./k8s-aws-chart
+```
+
+Below are the steps to configure, build, and deploy your Kubernetes application on EKS.
+
+---
+
+## Prerequisites
+
+1. **AWS CLI & eksctl**  
+   - Install and configure [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-install.html).  
+   - Install [`eksctl`](https://eksctl.io/) for provisioning EKS clusters.
+
+2. **kubectl**  
+   - Install [`kubectl`](https://kubernetes.io/docs/tasks/tools/) on your local machine.
+
+3. **Docker & BuildKit**  
+   - Ensure Docker Desktop (or Docker Engine) is installed with BuildKit enabled.  
+   - If building multi-arch images, use `docker buildx` with `--platform=linux/amd64`.
+
+4. **Helm v3**  
+   - Install [Helm](https://helm.sh/docs/intro/install/).
+
+5. **AWS ECR Repositories**  
+   - Create (or identify) two Amazon ECR repositories:
+     - `k8app-backend`
+     - `k8app-frontend`
+
+   ```bash
+   aws ecr create-repository --repository-name k8app-backend --region <AWS_REGION>
+   aws ecr create-repository --repository-name k8app-frontend --region <AWS_REGION>
+   ```
+
+6. **IAM Permissions**  
+   - Your AWS IAM user must have permissions to create EKS clusters, ECR repositories, and manage IAM roles (for service accounts) if using IRSA.
+
+---
+
+## 1. Create or Connect to an EKS Cluster
+
+If you do not yet have an EKS cluster, create one with `eksctl`:
+
+```bash
+eksctl create cluster   --name k8app-eks   --version 1.24   --region <AWS_REGION>   --nodegroup-name standard-workers   --node-type t3.medium   --nodes 2   --nodes-min 2   --nodes-max 4   --managed
+```
+
+> **Tip:** Adjust `--version`, `node-type`, and autoscaling settings to your requirements.
+
+If you already have a cluster, ensure your kubeconfig is updated:
+
+```bash
+aws eks --region <AWS_REGION> update-kubeconfig --name k8app-eks
+```
+
+Verify you can connect:
+
+```bash
+kubectl get nodes
+```
+
+---
+
+## 2. Install NGINX Ingress Controller
+
+On EKS, we will use the official Helm chart for the NGINX Ingress Controller:
+
+```bash
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+helm repo update
+
+helm install ingress-nginx ingress-nginx/ingress-nginx   --namespace ingress-nginx   --create-namespace
+```
+
+Verify the ingress controller pods are running:
+
+```bash
+kubectl get pods -n ingress-nginx | grep ingress-nginx-controller
+```
+
+---
+
+## 3. Build and Push Docker Images to ECR
+
+Use the provided `build_and_push_docker_eks.sh` script in the root of your repo. First, update the variables at the top:
+
+- `AWS_ACCOUNT_ID=<YOUR_AWS_ACCOUNT_ID>`
+- `AWS_REGION=<AWS_REGION>`
+
+Then run:
+
+```bash
+chmod +x build_and_push_docker_eks.sh
+./build_and_push_docker_eks.sh
+```
+
+This script will:
+1. Authenticate Docker with ECR.
+2. Build `k8app-backend` and `k8app-frontend` locally.
+3. Tag and push the images to ECR:
+   - `<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/k8app-backend:latest`
+   - `<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/k8app-frontend:latest`
+
+---
+
+## 4. Review `k8s-aws-chart` Values
+
+Open `k8s-aws-chart/values.yaml` and verify:
+
+- **Images** point to the correct ECR URIs:
+
+  ```yaml
+  backend:
+    image:
+      repository: <AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/k8app-backend
+      tag: latest
+
+  frontend:
+    image:
+      repository: <AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/k8app-frontend
+      tag: latest
+  ```
+
+- **Storage Classes** use `gp2` (or your preferred EBS class):
+
+  ```yaml
+  postgres:
+    persistence:
+      enabled: true
+      storageClass: gp2
+      size: 10Gi
+  ```
+
+- **Service load balancer annotations**:
+
+  ```yaml
+  backend:
+    service:
+      type: LoadBalancer
+      annotations:
+        service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+  ```
+
+- **Ingress class** for NGINX:
+
+  ```yaml
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    annotations:
+      kubernetes.io/ingress.class: "nginx"
+      nginx.ingress.kubernetes.io/enable-cors: "true"
+  ```
+
+---
+
+## 5. Deploy PostgreSQL
+
+Apply the PVC, Deployment, and Service for PostgreSQL:
+
+```bash
+kubectl apply -f k8s-aws-chart/postgres-pvc.yaml
+kubectl apply -f k8s-aws-chart/postgres-deployment.yaml
+kubectl apply -f k8s-aws-chart/postgres-service.yaml
+```
+
+Wait until the Postgres pod is `Running`:
+
+```bash
+kubectl get pods -l app=postgres
+kubectl get pvc
+```
+
+---
+
+## 6. Deploy Backend and Frontend
+
+From within the `k8s-aws-chart/` directory:
+
+```bash
+helm install k8app ./   --set backend.image.repository=<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/k8app-backend   --set frontend.image.repository=<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/k8app-frontend
+```
+
+Helm will create Deployments and Services for both backend and frontend, using the values and templates provided.
+
+Verify that the Pods and Services are up:
+
+```bash
+kubectl get pods -l app=k8app-backend
+kubectl get pods -l app=k8app-frontend
+kubectl get svc k8app-backend k8app-frontend
+```
+
+---
+
+## 7. Deploy Ingress
+
+Apply the Ingress resource via Helm (already included in the chart):
+
+```bash
+# Already applied by Helm install if templates include ingress.yaml
+helm status k8app
+```
+
+Or manually:
+
+```bash
+kubectl apply -f k8s-aws-chart/ingress.yaml
+```
+
+Check that the ingress has an address (an AWS ELB domain):
+
+```bash
+kubectl get ingress k8app-ingress
+```
+
+You should see something like:
+
+```
+NAME             CLASS   HOSTS      ADDRESS                                                      PORTS   AGE
+k8app-ingress    nginx   k8app.com  a1b2c3d4e5f6g7h8-1234567890.us-west-2.elb.amazonaws.com      80,443  2m
+```
+
+---
+
+## 8. Update DNS
+
+- Create a DNS A (and CNAME for `www`) record pointing `k8app.com` → the ALB/NLB DNS name shown under `ADDRESS`.
+- If you do not have a public DNS, you can edit your local `/etc/hosts` (for testing):
+
+  ```bash
+  echo "<ELB_DNS_NAME>  k8app.com" | sudo tee -a /etc/hosts
+  ```
+
+Replace `<ELB_DNS_NAME>` with the external hostname of your load balancer.
+
+---
+
+## 9. Access the Application
+
+1. **Open your browser** at `http://k8app.com` (or `https://k8app.com` if you configured TLS).  
+2. The React frontend should load.  
+3. In DevTools → Network, verify that any `fetch("/items")` calls now return `200 OK` (proxied by ingress to the backend).
+
+---
+
+## 10. Cleanup
+
+To remove all resources created by Helm:
+
+```bash
+helm uninstall k8app
+kubectl delete -f k8s-aws-chart/postgres-pvc.yaml
+helm uninstall ingress-nginx -n ingress-nginx
+eksctl delete cluster --name k8app-eks --region <AWS_REGION>
+```
+
 ## Setup using microk8s
 
 ### Local DNS settings
