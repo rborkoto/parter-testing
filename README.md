@@ -1,4 +1,6 @@
-# Kubernetes App example. Make sure to use the correct version i.e. x86 or ARM based on your CPU.
+# Kubernetes App example. 
+
+Make sure to use the correct version i.e. x86 or ARM based on your CPU.
 
 Simple containerized application with Kubernetes.
 This is a **TodoList application** which has **backend, frontend and database** deployed using Kubernetes.
