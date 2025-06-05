@@ -144,201 +144,107 @@ Verify you can connect:
 kubectl get nodes
 ```
 
----
-
-## 2. Install NGINX Ingress Controller
-
-On EKS, we will use the official Helm chart for the NGINX Ingress Controller:
-
-```bash
-helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
-helm repo update
-
-helm install ingress-nginx ingress-nginx/ingress-nginx   --namespace ingress-nginx   --create-namespace
-```
-
-Verify the ingress controller pods are running:
-
-```bash
-kubectl get pods -n ingress-nginx | grep ingress-nginx-controller
-```
-
----
-
-## 3. Build and Push Docker Images to ECR
-
-Use the provided `build_and_push_docker_eks.sh` script in the root of your repo. First, update the variables at the top:
-
-- `AWS_ACCOUNT_ID=<YOUR_AWS_ACCOUNT_ID>`
-- `AWS_REGION=<AWS_REGION>`
-
-Then run:
-
-```bash
-chmod +x build_and_push_docker_eks.sh
-./build_and_push_docker_eks.sh
-```
-
-This script will:
-1. Authenticate Docker with ECR.
-2. Build `k8app-backend` and `k8app-frontend` locally.
-3. Tag and push the images to ECR:
-   - `<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/k8app-backend:latest`
-   - `<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/k8app-frontend:latest`
-
----
-
-## 4. Review `k8s-aws-chart` Values
-
-Open `k8s-aws-chart/values.yaml` and verify:
-
-- **Images** point to the correct ECR URIs:
-
-  ```yaml
-  backend:
-    image:
-      repository: <AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/k8app-backend
-      tag: latest
-
-  frontend:
-    image:
-      repository: <AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/k8app-frontend
-      tag: latest
-  ```
-
-- **Storage Classes** use `gp2` (or your preferred EBS class):
-
-  ```yaml
-  postgres:
-    persistence:
-      enabled: true
-      storageClass: gp2
-      size: 10Gi
-  ```
-
-- **Service load balancer annotations**:
-
-  ```yaml
-  backend:
-    service:
-      type: LoadBalancer
-      annotations:
-        service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
-  ```
-
-- **Ingress class** for NGINX:
-
-  ```yaml
-  ingress:
-    enabled: true
-    ingressClassName: nginx
-    annotations:
-      kubernetes.io/ingress.class: "nginx"
-      nginx.ingress.kubernetes.io/enable-cors: "true"
-  ```
-
----
-
-## 5. Deploy PostgreSQL
-
-Apply the PVC, Deployment, and Service for PostgreSQL:
-
-```bash
-kubectl apply -f k8s-aws-chart/postgres-pvc.yaml
-kubectl apply -f k8s-aws-chart/postgres-deployment.yaml
-kubectl apply -f k8s-aws-chart/postgres-service.yaml
-```
-
-Wait until the Postgres pod is `Running`:
-
-```bash
-kubectl get pods -l app=postgres
-kubectl get pvc
-```
-
----
-
-## 6. Deploy Backend and Frontend
-
-From within the `k8s-aws-chart/` directory:
-
-```bash
-helm install k8app ./   --set backend.image.repository=<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/k8app-backend   --set frontend.image.repository=<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/k8app-frontend
-```
-
-Helm will create Deployments and Services for both backend and frontend, using the values and templates provided.
-
-Verify that the Pods and Services are up:
-
-```bash
-kubectl get pods -l app=k8app-backend
-kubectl get pods -l app=k8app-frontend
-kubectl get svc k8app-backend k8app-frontend
-```
-
----
-
-## 7. Deploy Ingress
-
-Apply the Ingress resource via Helm (already included in the chart):
-
-```bash
-# Already applied by Helm install if templates include ingress.yaml
-helm status k8app
-```
-
-Or manually:
-
-```bash
-kubectl apply -f k8s-aws-chart/ingress.yaml
-```
-
-Check that the ingress has an address (an AWS ELB domain):
-
-```bash
-kubectl get ingress k8app-ingress
-```
-
-You should see something like:
-
-```
-NAME             CLASS   HOSTS      ADDRESS                                                      PORTS   AGE
-k8app-ingress    nginx   k8app.com  a1b2c3d4e5f6g7h8-1234567890.us-west-2.elb.amazonaws.com      80,443  2m
-```
-
----
-
-## 8. Update DNS
-
-- Create a DNS A (and CNAME for `www`) record pointing `k8app.com` → the ALB/NLB DNS name shown under `ADDRESS`.
-- If you do not have a public DNS, you can edit your local `/etc/hosts` (for testing):
-
+- NGINX Ingress Controller is installed:
   ```bash
-  echo "<ELB_DNS_NAME>  k8app.com" | sudo tee -a /etc/hosts
+  helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+  helm repo update
+  helm install ingress-nginx ingress-nginx/ingress-nginx     --namespace ingress-nginx --create-namespace
   ```
 
-Replace `<ELB_DNS_NAME>` with the external hostname of your load balancer.
+- Docker images are built and pushed to ECR:
+  - `<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/k8app-backend:latest`
+  - `<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/k8app-frontend:latest`
+
+- ECR repositories (`k8app-backend` and `k8app-frontend`) already exist.
 
 ---
 
-## 9. Access the Application
+## 2. Apply Kubernetes Manifests
 
-1. **Open your browser** at `http://k8app.com` (or `https://k8app.com` if you configured TLS).  
-2. The React frontend should load.  
-3. In DevTools → Network, verify that any `fetch("/items")` calls now return `200 OK` (proxied by ingress to the backend).
+1. **PostgreSQL**
+
+   - PersistentVolumeClaim:
+     ```bash
+     kubectl apply -f postgres-pvc.yaml
+     ```
+   - Deployment:
+     ```bash
+     kubectl apply -f postgres-deployment.yaml
+     ```
+   - Service:
+     ```bash
+     kubectl apply -f postgres-service.yaml
+     ```
+
+   *(Optional: ConfigMap & Secret for Postgres)*
+   ```bash
+   kubectl apply -f postgres-config.yaml
+   kubectl apply -f postgres-secret.yaml
+   ```
+
+2. **Backend**
+
+   - Deployment:
+     ```bash
+     kubectl apply -f backend-deployment.yaml
+     ```
+   - Service (LoadBalancer):
+     ```bash
+     kubectl apply -f backend-service.yaml
+     ```
+
+3. **Frontend**
+
+   - Deployment:
+     ```bash
+     kubectl apply -f frontend-deployment.yaml
+     ```
+   - Service:
+     ```bash
+     kubectl apply -f frontend-service.yaml
+     ```
+
+4. **Ingress**
+
+   ```bash
+   kubectl apply -f ingress.yaml
+   ```
+   - Check the Ingress address:
+     ```bash
+     kubectl get ingress k8app-ingress
+     ```
 
 ---
 
-## 10. Cleanup
+## 3. Update DNS
 
-To remove all resources created by Helm:
+- Point `k8app.com` to the Ingress ELB hostname shown by:
+  ```bash
+  kubectl get ingress k8app-ingress -o jsonpath="{.status.loadBalancer.ingress[0].hostname}"
+  ```
+- Add that hostname to your DNS provider or `/etc/hosts` for testing.
 
-```bash
-helm uninstall k8app
-kubectl delete -f k8s-aws-chart/postgres-pvc.yaml
-helm uninstall ingress-nginx -n ingress-nginx
-eksctl delete cluster --name k8app-eks --region <AWS_REGION>
-```
+---
+
+## 4. Verify & Cleanup
+
+- **Verify**:
+  ```bash
+  kubectl get pods
+  kubectl get svc
+  kubectl get ingress
+  ```
+- **Cleanup**:
+  ```bash
+  kubectl delete ingress k8app-ingress
+  kubectl delete svc k8app-backend k8app-frontend postgres
+  kubectl delete deployment k8app-backend k8app-frontend postgres
+  kubectl delete pvc postgres-pvc
+  kubectl delete configmap postgres-config k8app-backend-config
+  kubectl delete secret postgres-secret
+  helm uninstall ingress-nginx -n ingress-nginx
+  ```
+
 
 # Setup using microk8s
 
