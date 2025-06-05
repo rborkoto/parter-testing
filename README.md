@@ -338,7 +338,7 @@ helm uninstall ingress-nginx -n ingress-nginx
 eksctl delete cluster --name k8app-eks --region <AWS_REGION>
 ```
 
-## Setup using microk8s
+# Setup using microk8s
 
 ### Local DNS settings
 
@@ -375,7 +375,7 @@ In order to ensure that the application works on local version it is necessary t
 necessary to navigate to the backend first and trust the certificate there before going to the frontend. If this is not
 done the frontend will appear empty until you trust the certificate from the backend.
 
-## Setup using Google Cloud
+# Setup using Google Cloud
 
 `k8s-gcp` contains YAML files that are GCP used for GCP deployment.
 `k8s-gcp-chart` contains Helm charts that can be used to deploy on GCP.
@@ -402,7 +402,7 @@ sure it is properly build.
 5) As we have configured a real domain with SSL, after Ingress IP is issued, update the DNS routing to IP of Ingress.
 6) You are done. Follow the Frontend and Backend links and see them in action!
 
-## Setup using Minikube
+# Setup using Minikube
 
 1) Enable minikube to see local Docker images: ```eval $(minikube -p minikube docker-env)```
 2) Rebuild the docker images so now minikube sees them ```docker-compose build```
