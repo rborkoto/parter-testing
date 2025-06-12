@@ -149,6 +149,34 @@ kubectl get nodes
 - Docker images are built and pushed to ECR:
   - `<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/k8app-backend:latest`
   - `<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/k8app-frontend:latest`
+ 
+    ###	How to push the umages
+    1.	Authenticate your Docker client to ECR ```aws ecr get-login-password --region <AWS_REGION> \
+  | docker login --username AWS --password-stdin <AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com```
+    2.	Build your images (if you haven’t already)
+       ```# From your repository root:
+    docker build -t k8app-backend:latest -f backend/backend.dockerfile .
+    docker build -t k8app-frontend:latest -f frontend/Dockerfile .
+       ```
+    3. Tag the images for your ECR repos
+   ```
+    docker tag k8app-backend:latest \
+   <AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/k8app-backend:latest
+
+  docker tag k8app-frontend:latest \
+   <AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/k8app-frontend:latest
+   ```
+    4.	Push the images to ECR
+  ```
+  docker push <AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/k8app-backend:latest
+  docker push <AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/k8app-frontend:latest
+  ```
+	5.	Verify
+```
+    aws ecr list-images --repository-name k8app-backend --region <AWS_REGION>
+    aws ecr list-images --repository-name k8app-frontend --region <AWS_REGION>
+```       
+
 
 - ECR repositories (`k8app-backend` and `k8app-frontend`) already exist.
 
