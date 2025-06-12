@@ -122,7 +122,7 @@ Below are the steps to configure, build, and deploy your Kubernetes application 
 If you do not yet have an EKS cluster, create one with `eksctl`:
 
 ```bash
-eksctl create cluster   --name k8app-eks   --version 1.24   --region <AWS_REGION>   --nodegroup-name standard-workers   --node-type t3.medium   --nodes 2   --nodes-min 2   --nodes-max 4   --managed
+eksctl create cluster   --name k8app-eks   --version 1.33   --region <AWS_REGION>   --nodegroup-name standard-workers   --node-type t3.medium   --nodes 2   --nodes-min 2   --nodes-max 4   --managed
 ```
 
 > **Tip:** Adjust `--version`, `node-type`, and autoscaling settings to your requirements.
